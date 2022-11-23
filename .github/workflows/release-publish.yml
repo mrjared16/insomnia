@@ -46,11 +46,11 @@ jobs:
           echo "INSO_VERSION=$(jq .version packages/insomnia-inso/package.json -rj)" >> $GITHUB_ENV
 
       - name: Create Release for Inso CLI
-        uses: avakar/tag-and-release@v1
+        uses: ncipollo/release-action@v1
         id: release_inso_cli
         with:
-          tag_name: lib@${{ env.INSO_VERSION }}
-          release_name: "Inso CLI ${{ env.INSO_VERSION }} 📦"
+          tag: lib@${{ env.INSO_VERSION }}
+          name: "Inso CLI ${{ env.INSO_VERSION }} 📦"
           body: "Full changelog ⇒ https://insomnia.rest/changelog"
           commit: ${{ env.RELEASE_BRANCH }}
           prerelease: ${{ env.IS_PRERELEASE }}
@@ -70,11 +70,11 @@ jobs:
           draft: false
 
       - name: Create Tag and Release
-        uses: avakar/tag-and-release@v1
+        uses: ncipollo/release-action@v1
         id: core_tag_and_release
         with:
-          tag_name: ${{ env.RELEASE_CORE_TAG }}
-          release_name: "Insomnia ${{ env.RELEASE_VERSION }} 📦"
+          tag: ${{ env.RELEASE_CORE_TAG }}
+          name: "Insomnia ${{ env.RELEASE_VERSION }} 📦"
           body: "Full changelog ⇒ https://insomnia.rest/changelog"
           commit: ${{ env.RELEASE_BRANCH }}
           prerelease: ${{ env.IS_PRERELEASE }}
@@ -135,13 +135,6 @@ jobs:
         with:
           snap: artifacts/ubuntu-latest-artifacts/insomnia/dist/Insomnia.Core-${{ env.RELEASE_VERSION }}.snap
           release: stable
-
-      - name: Publish npm packages
-        run: |
-          npm config set //registry.npmjs.org/:_authToken ${NPM_TOKEN}
-          npm run publish -- --pre-dist-tag ${{ contains(github.event.inputs.version, 'alpha') && 'alpha' || 'beta' }} --yes
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Upload .deb to pulp (stable only)
         if: ${{ env.IS_PRERELEASE == 'false' }}

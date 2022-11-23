@@ -1,4 +1,4 @@
-import { Merge } from 'type-fest';
+import type { Merge } from 'type-fest';
 
 import { database as db } from '../common/database';
 import { strings } from '../common/strings';
@@ -160,7 +160,9 @@ function _migrateScope(workspace: MigrationWorkspace) {
 
 function _migrateIntoDefaultProject(workspace: Workspace) {
   if (!workspace.parentId) {
+    console.log(`No workspace parentId found for ${workspace._id} setting default ${DEFAULT_PROJECT_ID}`);
     workspace.parentId = DEFAULT_PROJECT_ID;
+    models.workspace.update(workspace, { parentId: DEFAULT_PROJECT_ID });
   }
 
   return workspace;

@@ -1,13 +1,11 @@
-import { SvgIcon } from 'insomnia-components';
-import React, { FC, useCallback, useState } from 'react';
+import React, { FC, Fragment, useCallback, useState } from 'react';
+import { useFetcher, useParams } from 'react-router-dom';
 
 import { parseApiSpec } from '../../../common/api-specs';
 import { getWorkspaceLabel } from '../../../common/get-workspace-label';
 import { RENDER_PURPOSE_NO_RENDER } from '../../../common/render';
-import * as models from '../../../models';
 import type { ApiSpec } from '../../../models/api-spec';
 import getWorkspaceName from '../../../models/helpers/get-workspace-name';
-import * as workspaceOperations from '../../../models/helpers/workspace-operations';
 import { Project } from '../../../models/project';
 import type { Workspace } from '../../../models/workspace';
 import { WorkspaceScopeKeys } from '../../../models/workspace';
@@ -21,56 +19,17 @@ import { DropdownDivider } from '../base/dropdown/dropdown-divider';
 import { DropdownItem } from '../base/dropdown/dropdown-item';
 import { showError, showModal, showPrompt } from '../modals';
 import { AskModal } from '../modals/ask-modal';
-import { showWorkspaceDuplicateModal } from '../modals/workspace-duplicate-modal';
+import { WorkspaceDuplicateModal } from '../modals/workspace-duplicate-modal';
+import { SvgIcon } from '../svg-icon';
 
 interface Props {
   workspace: Workspace;
   apiSpec: ApiSpec;
   project: Project;
+  projects: Project[];
 }
 
 const spinner = <i className="fa fa-refresh fa-spin" />;
-
-const useWorkspaceHandlers = ({ workspace, apiSpec }: Props) => {
-  const handleDuplicate = useCallback(() => {
-    showWorkspaceDuplicateModal({ workspace, apiSpec });
-  }, [workspace, apiSpec]);
-
-  const workspaceName = getWorkspaceName(workspace, apiSpec);
-
-  const handleRename = useCallback(() => {
-    showPrompt({
-      title: `Rename ${getWorkspaceLabel(workspace).singular}`,
-      defaultValue: workspaceName,
-      submitName: 'Rename',
-      selectText: true,
-      label: 'Name',
-      onComplete: async name => {
-        await workspaceOperations.rename(workspace, apiSpec, name);
-      },
-    });
-  }, [apiSpec, workspace, workspaceName]);
-
-  const handleDelete = useCallback(() => {
-    const label = getWorkspaceLabel(workspace);
-    showModal(AskModal, {
-      title: `Delete ${label.singular}`,
-      message: `Do you really want to delete "${workspaceName}"?`,
-      yesText: 'Yes',
-      noText: 'Cancel',
-      onDone: async (isYes: boolean) => {
-        if (!isYes) {
-          return;
-        }
-
-        await models.stats.incrementDeletedRequestsForDescendents(workspace);
-        await models.workspace.remove(workspace);
-      },
-    });
-  }, [workspace, workspaceName]);
-
-  return { handleDelete, handleDuplicate, handleRename };
-};
 
 const useDocumentActionPlugins = ({ workspace, apiSpec, project }: Props) => {
   const [actionPlugins, setActionPlugins] = useState<DocumentAction[]>([]);
@@ -106,8 +65,7 @@ const useDocumentActionPlugins = ({ workspace, apiSpec, project }: Props) => {
   const renderPluginDropdownItems = useCallback(() => actionPlugins.map(p => (
     <DropdownItem
       key={`${p.plugin.name}:${p.label}`}
-      value={p}
-      onClick={handleClick}
+      onClick={() => handleClick(p)}
       stayOpenAfterClick={!p.hideAfterClick}
     >
       {isLoading(p.label) && spinner}
@@ -119,21 +77,84 @@ const useDocumentActionPlugins = ({ workspace, apiSpec, project }: Props) => {
 };
 
 export const WorkspaceCardDropdown: FC<Props> = props => {
-  const { handleDelete, handleDuplicate, handleRename } = useWorkspaceHandlers(props);
+  const { workspace, apiSpec, projects } = props;
+  const { organizationId } = useParams<{ organizationId: string }>();
+  const fetcher = useFetcher();
+  const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
+
+  const workspaceName = getWorkspaceName(workspace, apiSpec);
+
   const { refresh, renderPluginDropdownItems } = useDocumentActionPlugins(props);
 
   return (
-    <Dropdown beside onOpen={refresh}>
-      <DropdownButton><SvgIcon icon="ellipsis" /></DropdownButton>
+    <Fragment>
+      <Dropdown beside onOpen={refresh}>
+        <DropdownButton>
+          <SvgIcon icon="ellipsis" />
+        </DropdownButton>
 
-      <DropdownItem onClick={handleDuplicate}>Duplicate</DropdownItem>
-      <DropdownItem onClick={handleRename}>Rename</DropdownItem>
+        <DropdownItem onClick={() => setIsDuplicateModalOpen(true)}>Duplicate</DropdownItem>
+        <DropdownItem
+          onClick={() => {
+            showPrompt({
+              title: `Rename ${getWorkspaceLabel(workspace).singular}`,
+              defaultValue: workspaceName,
+              submitName: 'Rename',
+              selectText: true,
+              label: 'Name',
+              onComplete: name =>
+                fetcher.submit(
+                  { name, workspaceId: workspace._id },
+                  {
+                    action: `/organization/${organizationId}/project/${workspace.parentId}/workspace/update`,
+                    method: 'post',
+                  }
+                ),
+            });
+          }}
+        >
+          Rename
+        </DropdownItem>
 
-      {renderPluginDropdownItems()}
+        {renderPluginDropdownItems()}
 
-      <DropdownDivider />
+        <DropdownDivider />
 
-      <DropdownItem className="danger" onClick={handleDelete}>Delete</DropdownItem>
-    </Dropdown>
+        <DropdownItem
+          className="danger"
+          onClick={() => {
+            const label = getWorkspaceLabel(workspace);
+            showModal(AskModal, {
+              title: `Delete ${label.singular}`,
+              message: `Do you really want to delete "${workspaceName}"?`,
+              yesText: 'Yes',
+              noText: 'Cancel',
+              onDone: async (isYes: boolean) => {
+                if (!isYes) {
+                  return;
+                }
+
+                fetcher.submit(
+                  { workspaceId: workspace._id },
+                  {
+                    action: `/organization/${organizationId}/project/${workspace.parentId}/workspace/delete`,
+                    method: 'post',
+                  }
+                );
+              },
+            });
+          }}
+        >
+          Delete
+        </DropdownItem>
+      </Dropdown>
+      {isDuplicateModalOpen && (
+        <WorkspaceDuplicateModal
+          onHide={() => setIsDuplicateModalOpen(false)}
+          workspace={workspace}
+          projects={projects}
+        />
+      )}
+    </Fragment>
   );
 };

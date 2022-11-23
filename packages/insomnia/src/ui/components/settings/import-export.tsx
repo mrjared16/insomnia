@@ -1,20 +1,23 @@
 import { importers } from 'insomnia-importers';
 import React, { FC, useCallback } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
+import { useSelector } from 'react-redux';
+import { useRevalidator } from 'react-router-dom';
 
 import { getProductName } from '../../../common/constants';
 import { docsImportExport } from '../../../common/documentation';
+import { exportAllToFile } from '../../../common/export';
 import { getWorkspaceLabel } from '../../../common/get-workspace-label';
+import { ForceToWorkspace } from '../../../common/import';
 import { strings } from '../../../common/strings';
-import { exportAllToFile } from '../../redux/modules/global';
-import { ForceToWorkspace } from '../../redux/modules/helpers';
-import { importClipBoard, importFile, importUri } from '../../redux/modules/import';
-import { selectActiveProjectName, selectActiveWorkspace, selectActiveWorkspaceName } from '../../redux/selectors';
+import { isRequestGroup } from '../../../models/request-group';
+import { importClipBoard, importFile, importUri } from '../../import';
+import { selectActiveProject, selectActiveProjectName, selectActiveWorkspace, selectActiveWorkspaceName, selectProjects, selectWorkspaceRequestsAndRequestGroups, selectWorkspacesForActiveProject, selectWorkspacesWithResolvedNameForActiveProject } from '../../redux/selectors';
 import { Dropdown } from '../base/dropdown/dropdown';
 import { DropdownButton } from '../base/dropdown/dropdown-button';
 import { DropdownDivider } from '../base/dropdown/dropdown-divider';
 import { DropdownItem } from '../base/dropdown/dropdown-item';
 import { Link } from '../base/link';
+import { AlertModal } from '../modals/alert-modal';
 import { ExportRequestsModal } from '../modals/export-requests-modal';
 import { showModal, showPrompt } from '../modals/index';
 
@@ -23,11 +26,15 @@ interface Props {
 }
 
 export const ImportExport: FC<Props> = ({ hideSettingsModal }) => {
-  const dispatch = useDispatch();
   const projectName = useSelector(selectActiveProjectName) ?? getProductName();
   const activeWorkspace = useSelector(selectActiveWorkspace);
+  const activeProjectWorkspaces = useSelector(selectWorkspacesWithResolvedNameForActiveProject);
+  const activeProject = useSelector(selectActiveProject);
+  const projects = useSelector(selectProjects);
   const forceToWorkspace = activeWorkspace?._id ? ForceToWorkspace.current : ForceToWorkspace.existing;
-
+  const workspacesForActiveProject = useSelector(selectWorkspacesForActiveProject);
+  const workspaceRequestsAndRequestGroups = useSelector(selectWorkspaceRequestsAndRequestGroups);
+  const { revalidate } = useRevalidator();
   const handleImportUri = useCallback(() => {
     const lastUsedImportUri = window.localStorage.getItem('insomnia.lastUsedImportUri');
     const defaultValue = lastUsedImportUri ? { defaultValue: lastUsedImportUri } : {};
@@ -39,32 +46,54 @@ export const ImportExport: FC<Props> = ({ hideSettingsModal }) => {
       placeholder: 'https://website.com/insomnia-import.json',
       onComplete: (uri: string) => {
         window.localStorage.setItem('insomnia.lastUsedImportUri', uri);
-        dispatch(importUri(uri, { workspaceId: activeWorkspace?._id, forceToWorkspace }));
+        importUri(uri, {
+          activeProjectWorkspaces,
+          activeProject,
+          projects,
+          workspaceId: activeWorkspace?._id,
+          forceToWorkspace, onComplete: revalidate });
         hideSettingsModal();
       },
       ...defaultValue,
     });
-  }, [dispatch, activeWorkspace?._id, forceToWorkspace, hideSettingsModal]);
+  }, [activeProjectWorkspaces, activeProject, projects, activeWorkspace?._id, forceToWorkspace, revalidate, hideSettingsModal]);
 
   const showExportRequestsModal = useCallback(() => {
+    if (!workspaceRequestsAndRequestGroups.filter(r => !isRequestGroup(r)).length) {
+      showModal(AlertModal, {
+        title: 'Cannot export',
+        message: <>There are no requests to export.</>,
+      });
+      return;
+    }
     showModal(ExportRequestsModal);
     hideSettingsModal();
-  }, [hideSettingsModal]);
+  }, [hideSettingsModal, workspaceRequestsAndRequestGroups]);
 
   const handleExportAllToFile = useCallback(() => {
-    dispatch((exportAllToFile()));
+    exportAllToFile(projectName, workspacesForActiveProject);
     hideSettingsModal();
-  }, [hideSettingsModal, dispatch]);
+  }, [hideSettingsModal, projectName, workspacesForActiveProject]);
 
   const handleImportFile = useCallback(() => {
-    dispatch(importFile({ workspaceId: activeWorkspace?._id, forceToWorkspace }));
+    importFile({
+      activeProjectWorkspaces,
+      activeProject,
+      projects,
+      workspaceId: activeWorkspace?._id,
+      forceToWorkspace, onComplete: revalidate });
     hideSettingsModal();
-  }, [dispatch, activeWorkspace?._id, forceToWorkspace, hideSettingsModal]);
+  }, [activeProjectWorkspaces, activeProject, projects, activeWorkspace?._id, forceToWorkspace, revalidate, hideSettingsModal]);
 
   const handleImportClipBoard = useCallback(() => {
-    dispatch(importClipBoard({ workspaceId: activeWorkspace?._id, forceToWorkspace }));
+    importClipBoard({
+      activeProjectWorkspaces,
+      activeProject,
+      projects,
+      workspaceId: activeWorkspace?._id,
+      forceToWorkspace, onComplete: revalidate });
     hideSettingsModal();
-  }, [dispatch, activeWorkspace?._id, forceToWorkspace, hideSettingsModal]);
+  }, [activeProjectWorkspaces, activeProject, projects, activeWorkspace?._id, forceToWorkspace, revalidate, hideSettingsModal]);
 
   const activeWorkspaceName = useSelector(selectActiveWorkspaceName);
 

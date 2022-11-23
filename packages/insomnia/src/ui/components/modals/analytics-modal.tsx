@@ -1,14 +1,15 @@
-import { Button } from 'insomnia-components';
 import React, { FC, useCallback, useEffect, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import styled from 'styled-components';
 
 import { getAppSynopsis, getProductName } from '../../../common/constants';
 import * as models from '../../../models';
+import { SegmentEvent, trackSegmentEvent } from '../../analytics';
 import chartSrc from '../../images/chart.svg';
 import coreLogo from '../../images/insomnia-logo.svg';
 import { selectSettings } from '../../redux/selectors';
-import { Modal } from '../base/modal';
+import { type ModalHandle, Modal } from '../base/modal';
+import { Button } from '../themed-button';
 
 const Wrapper = styled.div({
   position: 'relative',
@@ -19,7 +20,6 @@ const Header = styled.div({
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
-  padding: 'var(--padding-lg)',
   borderBottom: '1px solid var(--hl-sm)',
 });
 
@@ -37,8 +37,6 @@ const SubHeader = styled.div({
 });
 
 const InsomniaLogo = styled.div({
-  top: '-1.75rem',
-  position: 'absolute',
   width: '100%',
   textAlign: 'center',
   img: {
@@ -51,7 +49,7 @@ const Body = styled.div({
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
-  padding: 'var(--padding-sm) var(--padding-lg) var(--padding-md)',
+  padding: 'var(--padding-sm) 0 var(--padding-md)',
 });
 
 const DemonstrationChart = styled.img({
@@ -62,8 +60,6 @@ const DemonstrationChart = styled.img({
 const ActionButtons = styled.div({
   display: 'flex',
   flexDirection: 'column',
-  marginBottom: 'var(--padding-md)',
-  padding: '0 var(--padding-lg)',
   '& .btn--super-compact': {
     textDecoration: 'underline',
     color: 'var(--hl-xl)',
@@ -74,13 +70,14 @@ const ActionButtons = styled.div({
 
 export const AnalyticsModal: FC = () => {
   const { hasPromptedAnalytics } = useSelector(selectSettings);
-  const ref = useRef<Modal>(null);
+  const ref = useRef<ModalHandle>(null);
 
   const onEnable = useCallback(async () => {
     await models.settings.patch({
       enableAnalytics: true,
       hasPromptedAnalytics: true,
     });
+    trackSegmentEvent(SegmentEvent.appStarted, {});
   }, []);
   const onDisable = async () => {
     await models.settings.patch({
@@ -102,13 +99,13 @@ export const AnalyticsModal: FC = () => {
   }
 
   return (
-    <Modal centered noEscape skinny ref={ref}>
+    <Modal centered skinny ref={ref}>
       <Wrapper>
-        <InsomniaLogo>
-          <img src={coreLogo} alt="Kong" />
-        </InsomniaLogo>
-
         <Header>
+          <InsomniaLogo>
+            <img src={coreLogo} alt="Kong" />
+          </InsomniaLogo>
+
           <Headline>Welcome to {getProductName()}</Headline>
           <SubHeader>{getAppSynopsis()}</SubHeader>
         </Header>
@@ -120,28 +117,27 @@ export const AnalyticsModal: FC = () => {
 
           <p>Help us understand how <strong>you</strong> use {getProductName()} so we can make it better.</p>
         </Body>
-
-        <ActionButtons>
-          <Button
-            key="enable"
-            bg="surprise"
-            radius="3px"
-            size="medium"
-            variant="contained"
-            onClick={onEnable}
-          >
-            Share Usage Analytics
-          </Button>
-
-          <button
-            key="disable"
-            className="btn btn--super-compact"
-            onClick={onDisable}
-          >
-            Don't share usage analytics
-          </button>
-        </ActionButtons>
       </Wrapper>
+      <ActionButtons>
+        <Button
+          key="enable"
+          bg="surprise"
+          radius="3px"
+          size="medium"
+          variant="contained"
+          onClick={onEnable}
+        >
+          Share Usage Analytics
+        </Button>
+
+        <button
+          key="disable"
+          className="btn btn--super-compact"
+          onClick={onDisable}
+        >
+          Don't share usage analytics
+        </button>
+      </ActionButtons>
     </Modal>
   );
 };

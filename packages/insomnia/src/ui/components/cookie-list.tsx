@@ -1,8 +1,8 @@
-import { cookieToString } from 'insomnia-cookies';
 import React, { FC, useCallback } from 'react';
 import { Cookie as ToughCookie } from 'tough-cookie';
 import { v4 as uuidv4 } from 'uuid';
 
+import { cookieToString } from '../../common/cookies';
 import { Cookie } from '../../models/cookie-jar';
 import { Dropdown } from './base/dropdown/dropdown';
 import { DropdownButton } from './base/dropdown/dropdown-button';
@@ -15,7 +15,7 @@ import { RenderedText } from './rendered-text';
 export interface CookieListProps {
   handleCookieAdd: (cookie: Cookie) => void;
   handleCookieDelete: (cookie: Cookie) => void;
-  handleDeleteAll: Function;
+  handleDeleteAll: () => void;
   cookies: Cookie[];
   newCookieDomainName: string;
 }
@@ -29,16 +29,8 @@ const CookieRow: FC<{
   index: number;
   deleteCookie: (cookie: Cookie) => void;
 }> = ({ cookie, index, deleteCookie }) => {
-
-  const handleDeleteCookie = useCallback(() => {
-    deleteCookie(cookie);
-  }, [deleteCookie, cookie]);
-
-  const handleShowModal = useCallback(() => {
-    showModal(CookieModifyModal, cookie);
-  }, [cookie]);
-
-  const cookieString = cookieToString(ToughCookie.fromJSON(cookie));
+  const c = ToughCookie.fromJSON(cookie);
+  const cookieString = c ? cookieToString(c) : '';
   return <tr className="selectable" key={index}>
     <td>
       <RenderedText>{cookie.domain || ''}</RenderedText>
@@ -46,19 +38,18 @@ const CookieRow: FC<{
     <td className="force-wrap wide">
       <RenderedText>{cookieString || ''}</RenderedText>
     </td>
-    <td onClick={() => {}} className="text-right no-wrap">
+    <td onClick={() => { }} className="text-right no-wrap">
       <button
         className="btn btn--super-compact btn--outlined"
-        onClick={handleShowModal}
+        onClick={() => showModal(CookieModifyModal, { cookie })}
         title="Edit cookie properties"
       >
         Edit
       </button>{' '}
       <PromptButton
         className="btn btn--super-compact btn--outlined"
-        addIcon
         confirmMessage=""
-        onClick={handleDeleteCookie}
+        onClick={() => deleteCookie(cookie)}
         title="Delete cookie"
       >
         <i className="fa fa-trash-o" />

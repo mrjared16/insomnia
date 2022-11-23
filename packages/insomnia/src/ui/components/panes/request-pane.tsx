@@ -1,22 +1,24 @@
-import classnames from 'classnames';
-import { deconstructQueryStringToParams, extractQueryStringFromUrl } from 'insomnia-url';
 import React, { FC, useCallback, useEffect, useRef } from 'react';
-import { Tab, TabList, TabPanel, Tabs } from 'react-tabs';
-import { useMount } from 'react-use';
+import { useSelector } from 'react-redux';
+import styled from 'styled-components';
 
+import { getContentTypeFromHeaders } from '../../../common/constants';
+import { database } from '../../../common/database';
 import * as models from '../../../models';
 import { queryAllWorkspaceUrls } from '../../../models/helpers/query-all-workspace-urls';
 import { update } from '../../../models/helpers/request-operations';
-import type {
-  Request,
-  RequestHeader,
-} from '../../../models/request';
+import type { Request } from '../../../models/request';
 import type { Settings } from '../../../models/settings';
 import type { Workspace } from '../../../models/workspace';
+import { deconstructQueryStringToParams, extractQueryStringFromUrl } from '../../../utils/url/querystring';
+import { useActiveRequestSyncVCSVersion, useGitVCSVersion } from '../../hooks/use-vcs-version';
+import { selectActiveEnvironment, selectActiveRequestMeta } from '../../redux/selectors';
+import { PanelContainer, TabItem, Tabs } from '../base/tabs';
 import { AuthDropdown } from '../dropdowns/auth-dropdown';
 import { ContentTypeDropdown } from '../dropdowns/content-type-dropdown';
 import { AuthWrapper } from '../editors/auth/auth-wrapper';
 import { BodyEditor } from '../editors/body/body-editor';
+import { QueryEditor, QueryEditorContainer, QueryEditorPreview } from '../editors/query-editor';
 import { RequestHeadersEditor } from '../editors/request-headers-editor';
 import { RequestParametersEditor } from '../editors/request-parameters-editor';
 import { ErrorBoundary } from '../error-boundary';
@@ -25,33 +27,50 @@ import { showModal } from '../modals';
 import { RequestSettingsModal } from '../modals/request-settings-modal';
 import { RenderedQueryString } from '../rendered-query-string';
 import { RequestUrlBar, RequestUrlBarHandle } from '../request-url-bar';
-import { Pane, paneBodyClasses, PaneHeader } from './pane';
+import { Pane, PaneHeader } from './pane';
 import { PlaceholderRequestPane } from './placeholder-request-pane';
+
+const HeaderContainer = styled.div({
+  display: 'flex',
+  flexDirection: 'column',
+  position: 'relative',
+  height: '100%',
+  overflowY: 'auto',
+});
+
+export const TabPanelFooter = styled.div({
+  boxSizing: 'content-box',
+  display: 'flex',
+  flexDirection: 'row',
+  borderTop: '1px solid var(--hl-md)',
+  height: 'var(--line-height-sm)',
+  fontSize: 'var(--font-size-sm)',
+  '& > button': {
+    color: 'var(--hl)',
+    padding: 'var(--padding-xs) var(--padding-xs)',
+    height: '100%',
+  },
+});
+
+const TabPanelBody = styled.div({
+  overflowY: 'auto',
+  flex: '1 0',
+});
 
 interface Props {
   environmentId: string;
-  forceRefreshCounter: number;
-  forceUpdateRequest: (r: Request, patch: Partial<Request>) => Promise<Request>;
-  forceUpdateRequestHeaders: (r: Request, headers: RequestHeader[]) => Promise<Request>;
-  handleImport: Function;
-  headerEditorKey: string;
   request?: Request | null;
   settings: Settings;
-  updateRequestMimeType: (mimeType: string | null) => Promise<Request | null>;
   workspace: Workspace;
+  setLoading: (l: boolean) => void;
 }
 
 export const RequestPane: FC<Props> = ({
   environmentId,
-  forceRefreshCounter,
-  forceUpdateRequest,
-  forceUpdateRequestHeaders,
-  handleImport,
-  headerEditorKey,
   request,
   settings,
-  updateRequestMimeType,
   workspace,
+  setLoading,
 }) => {
 
   const updateRequestUrl = (request: Request, url: string) => {
@@ -62,7 +81,7 @@ export const RequestPane: FC<Props> = ({
   };
 
   const handleEditDescription = useCallback((forceEditMode: boolean) => {
-    showModal(RequestSettingsModal, { request, forceEditMode });
+    request && showModal(RequestSettingsModal, { request, forceEditMode });
   }, [request]);
 
   const handleEditDescriptionAdd = useCallback(() => {
@@ -102,22 +121,29 @@ export const RequestPane: FC<Props> = ({
 
     // Only update if url changed
     if (url !== request.url) {
-      forceUpdateRequest(request, {
+      database.update({
+        ...request,
+        modified: Date.now(),
         url,
         parameters,
-      });
+      // Hack to force the ui to refresh. More info on use-vcs-version
+      }, true);
     }
-  }, [request, forceUpdateRequest]);
+  }, [request]);
+  const gitVersion = useGitVCSVersion();
+  const activeRequestSyncVersion = useActiveRequestSyncVCSVersion();
+  const activeEnvironment = useSelector(selectActiveEnvironment);
+  const activeRequestMeta = useSelector(selectActiveRequestMeta);
+  // Force re-render when we switch requests, the environment gets modified, or the (Git|Sync)VCS version changes
+  const uniqueKey = `${activeEnvironment?.modified}::${request?._id}::${gitVersion}::${activeRequestSyncVersion}::${activeRequestMeta?.activeResponseId}`;
 
   const requestUrlBarRef = useRef<RequestUrlBarHandle>(null);
-  useMount(() => {
-    requestUrlBarRef.current?.focusInput();
-  });
   useEffect(() => {
     requestUrlBarRef.current?.focusInput();
   }, [
     request?._id, // happens when the user switches requests
     settings.hasPromptedAnalytics, // happens when the user dismisses the analytics modal
+    uniqueKey,
   ]);
 
   if (!request) {
@@ -126,11 +152,23 @@ export const RequestPane: FC<Props> = ({
     );
   }
 
+  async function updateRequestMimeType(mimeType: string | null): Promise<Request | null> {
+    if (!request) {
+      console.warn('Tried to update request mime-type when no active request');
+      return null;
+    }
+    const requestMeta = await models.requestMeta.getOrCreateByParentId(request._id,);
+    // Switched to No body
+    const savedRequestBody = typeof mimeType !== 'string' ? request.body : {};
+    // Clear saved value in requestMeta
+    await models.requestMeta.update(requestMeta, { savedRequestBody });
+    // @ts-expect-error -- TSCONVERSION mimeType can be null when no body is selected but the updateMimeType logic needs to be reexamined
+    return models.request.updateMimeType(request, mimeType, false, requestMeta.savedRequestBody);
+  }
   const numParameters = request.parameters.filter(p => !p.disabled).length;
   const numHeaders = request.headers.filter(h => !h.disabled).length;
   const urlHasQueryParameters = request.url.indexOf('?') >= 0;
-  const uniqueKey = `${forceRefreshCounter}::${request._id}`;
-
+  const contentType = getContentTypeFromHeaders(request.headers) || request.body.mimeType;
   return (
     <Pane type="request">
       <PaneHeader>
@@ -141,162 +179,146 @@ export const RequestPane: FC<Props> = ({
             uniquenessKey={uniqueKey}
             onUrlChange={updateRequestUrl}
             handleAutocompleteUrls={autocompleteUrls}
-            handleImport={handleImport}
             nunjucksPowerUserMode={settings.nunjucksPowerUserMode}
             request={request}
+            setLoading={setLoading}
           />
         </ErrorBoundary>
       </PaneHeader>
-      <Tabs className={classnames(paneBodyClasses, 'react-tabs')} forceRenderTabPanel>
-        <TabList>
-          <Tab tabIndex="-1">
-            <ContentTypeDropdown
-              onChange={updateRequestMimeType}
-            />
-          </Tab>
-          <Tab tabIndex="-1">
-            <AuthDropdown />
-          </Tab>
-          <Tab tabIndex="-1">
-            <button>
-              Query
-              {numParameters > 0 && <span className="bubble space-left">{numParameters}</span>}
-            </button>
-          </Tab>
-          <Tab tabIndex="-1">
-            <button>
-              Header
-              {numHeaders > 0 && <span className="bubble space-left">{numHeaders}</span>}
-            </button>
-          </Tab>
-          <Tab tabIndex="-1">
-            <button>
-              Docs
-              {request.description && (
-                <span className="bubble space-left">
-                  <i className="fa fa--skinny fa-check txt-xxs" />
-                </span>
-              )}
-            </button>
-          </Tab>
-        </TabList>
-        <TabPanel key={uniqueKey} className="react-tabs__tab-panel editor-wrapper">
+      <Tabs aria-label="Request pane tabs">
+        <TabItem key="content-type" title={<ContentTypeDropdown onChange={updateRequestMimeType} />}>
           <BodyEditor
             key={uniqueKey}
             request={request}
             workspace={workspace}
             environmentId={environmentId}
             settings={settings}
-            onChangeHeaders={forceUpdateRequestHeaders}
           />
-        </TabPanel>
-        <TabPanel className="react-tabs__tab-panel scrollable-container">
-          <div className="scrollable">
-            <ErrorBoundary key={uniqueKey} errorClassName="font-error pad text-center">
-              <AuthWrapper />
-            </ErrorBoundary>
-          </div>
-        </TabPanel>
-        <TabPanel className="react-tabs__tab-panel query-editor">
-          <div className="pad pad-bottom-sm query-editor__preview">
-            <label className="label--small no-pad-top">Url Preview</label>
-            <code className="txt-sm block faint">
+        </TabItem>
+        <TabItem key="auth" title={<AuthDropdown />}>
+          <ErrorBoundary key={uniqueKey} errorClassName="font-error pad text-center">
+            <AuthWrapper />
+          </ErrorBoundary>
+        </TabItem>
+        <TabItem key="query" title={<>Query {numParameters > 0 && <span className="bubble space-left">{numParameters}</span>}</>}>
+          <QueryEditorContainer>
+            <QueryEditorPreview className="pad pad-bottom-sm">
+              <label className="label--small no-pad-top">Url Preview</label>
+              <code className="txt-sm block faint">
+                <ErrorBoundary
+                  key={uniqueKey}
+                  errorClassName="tall wide vertically-align font-error pad text-center"
+                >
+                  <RenderedQueryString request={request} />
+                </ErrorBoundary>
+              </code>
+            </QueryEditorPreview>
+            <QueryEditor>
               <ErrorBoundary
                 key={uniqueKey}
                 errorClassName="tall wide vertically-align font-error pad text-center"
               >
-                <RenderedQueryString request={request} />
+                <RequestParametersEditor
+                  key={contentType}
+                  request={request}
+                  bulk={settings.useBulkParametersEditor}
+                />
               </ErrorBoundary>
-            </code>
-          </div>
-          <div className="query-editor__editor">
-            <ErrorBoundary
-              key={uniqueKey}
-              errorClassName="tall wide vertically-align font-error pad text-center"
-            >
-              <RequestParametersEditor
-                key={headerEditorKey}
-                request={request}
-                bulk={settings.useBulkParametersEditor}
-              />
+            </QueryEditor>
+            <TabPanelFooter>
+              <button
+                className="btn btn--compact"
+                title={urlHasQueryParameters ? 'Import querystring' : 'No query params to import'}
+                onClick={handleImportQueryFromUrl}
+              >
+                Import from URL
+              </button>
+              <button
+                className="btn btn--compact"
+                onClick={handleUpdateSettingsUseBulkParametersEditor}
+              >
+                {settings.useBulkParametersEditor ? 'Regular Edit' : 'Bulk Edit'}
+              </button>
+            </TabPanelFooter>
+          </QueryEditorContainer>
+        </TabItem>
+        <TabItem key="headers" title={<>Headers {numHeaders > 0 && <span className="bubble space-left">{numHeaders}</span>}</>}>
+          <HeaderContainer>
+            <ErrorBoundary key={uniqueKey} errorClassName="font-error pad text-center">
+              <TabPanelBody>
+                <RequestHeadersEditor
+                  request={request}
+                  bulk={settings.useBulkHeaderEditor}
+                />
+              </TabPanelBody>
             </ErrorBoundary>
-          </div>
-          <div className="pad-right text-right">
-            <button
-              className="margin-top-sm btn btn--clicky"
-              title={urlHasQueryParameters ? 'Import querystring' : 'No query params to import'}
-              onClick={handleImportQueryFromUrl}
-            >
-              Import from URL
-            </button>
-            <button
-              className="margin-top-sm btn btn--clicky space-left"
-              onClick={handleUpdateSettingsUseBulkParametersEditor}
-            >
-              {settings.useBulkParametersEditor ? 'Regular Edit' : 'Bulk Edit'}
-            </button>
-          </div>
-        </TabPanel>
-        <TabPanel className="react-tabs__tab-panel header-editor">
-          <ErrorBoundary key={uniqueKey} errorClassName="font-error pad text-center">
-            <RequestHeadersEditor
-              key={headerEditorKey}
-              request={request}
-              bulk={settings.useBulkHeaderEditor}
-            />
-          </ErrorBoundary>
 
-          <div className="pad-right text-right">
-            <button
-              className="margin-top-sm btn btn--clicky"
-              onClick={handleUpdateSettingsUseBulkHeaderEditor}
-            >
-              {settings.useBulkHeaderEditor ? 'Regular Edit' : 'Bulk Edit'}
-            </button>
-          </div>
-        </TabPanel>
-        <TabPanel key={`docs::${uniqueKey}`} className="react-tabs__tab-panel tall scrollable">
-          {request.description ? (
-            <div>
-              <div className="pull-right pad bg-default">
-                {/* @ts-expect-error -- TSCONVERSION the click handler expects a boolean prop... */}
-                <button className="btn btn--clicky" onClick={handleEditDescription}>
-                  Edit
-                </button>
-              </div>
-              <div className="pad">
-                <ErrorBoundary errorClassName="font-error pad text-center">
-                  <MarkdownPreview
-                    heading={request.name}
-                    markdown={request.description}
-                  />
-                </ErrorBoundary>
-              </div>
-            </div>
-          ) : (
-            <div className="overflow-hidden editor vertically-center text-center">
-              <p className="pad text-sm text-center">
-                <span className="super-faint">
-                  <i
-                    className="fa fa-file-text-o"
-                    style={{
-                      fontSize: '8rem',
-                      opacity: 0.3,
-                    }}
-                  />
+            <TabPanelFooter>
+              <button
+                className="btn btn--compact"
+                onClick={handleUpdateSettingsUseBulkHeaderEditor}
+              >
+                {settings.useBulkHeaderEditor ? 'Regular Edit' : 'Bulk Edit'}
+              </button>
+            </TabPanelFooter>
+          </HeaderContainer>
+        </TabItem>
+        <TabItem
+          key="docs"
+          title={
+            <>
+              Docs
+              {request.description && (
+                <span className="bubble space-left">
+                  <i className="fa fa--skinny fa-check txt-xxs" />
                 </span>
-                <br />
-                <br />
-                <button
-                  className="btn btn--clicky faint"
-                  onClick={handleEditDescriptionAdd}
-                >
-                  Add Description
-                </button>
-              </p>
-            </div>
-          )}
-        </TabPanel>
+              )}
+            </>
+          }
+        >
+          <PanelContainer className="tall">
+            {request.description ? (
+              <div>
+                <div className="pull-right pad bg-default">
+                  {/* @ts-expect-error -- TSCONVERSION the click handler expects a boolean prop... */}
+                  <button className="btn btn--clicky" onClick={handleEditDescription}>
+                    Edit
+                  </button>
+                </div>
+                <div className="pad">
+                  <ErrorBoundary errorClassName="font-error pad text-center">
+                    <MarkdownPreview
+                      heading={request.name}
+                      markdown={request.description}
+                    />
+                  </ErrorBoundary>
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-hidden editor vertically-center text-center">
+                <p className="pad text-sm text-center">
+                  <span className="super-faint">
+                    <i
+                      className="fa fa-file-text-o"
+                      style={{
+                        fontSize: '8rem',
+                        opacity: 0.3,
+                      }}
+                    />
+                  </span>
+                  <br />
+                  <br />
+                  <button
+                    className="btn btn--clicky faint"
+                    onClick={handleEditDescriptionAdd}
+                  >
+                    Add Description
+                  </button>
+                </p>
+              </div>
+            )}
+          </PanelContainer>
+        </TabItem>
       </Tabs>
     </Pane>
   );

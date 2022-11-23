@@ -1,14 +1,14 @@
 import classnames from 'classnames';
-import { KeyBindings, KeyCombination } from 'insomnia-common';
 import React, { FC, memo } from 'react';
 
 import { isMac } from '../../common/constants';
 import { constructKeyCombinationDisplay, getPlatformKeyCombinations } from '../../common/hotkeys';
+import { KeyCombination, PlatformKeyCombinations } from '../../common/settings';
 
 interface Props {
   /** One of these two must be given. If both is given, keyCombination will be used. */
   keyCombination?: KeyCombination;
-  keyBindings?: KeyBindings;
+  keyBindings?: PlatformKeyCombinations;
   className?: string;
   /** Show fallback message if keyCombination is not given, but keyBindings has no key combinations. */
   useFallbackMessage?: boolean;

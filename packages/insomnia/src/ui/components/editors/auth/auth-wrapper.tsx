@@ -2,6 +2,7 @@ import React, { FC, ReactNode } from 'react';
 import { useSelector } from 'react-redux';
 
 import {
+  AUTH_API_KEY,
   AUTH_ASAP,
   AUTH_AWS_IAM,
   AUTH_BASIC,
@@ -13,8 +14,8 @@ import {
   AUTH_OAUTH_1,
   AUTH_OAUTH_2,
 } from '../../../../common/constants';
-import { isRequest } from '../../../../models/request';
 import { selectActiveRequest } from '../../../redux/selectors';
+import { ApiKeyAuth } from './api-key-auth';
 import { AsapAuth } from './asap-auth';
 import { AWSAuth } from './aws-auth';
 import { BasicAuth } from './basic-auth';
@@ -26,10 +27,10 @@ import { NTLMAuth } from './ntlm-auth';
 import { OAuth1Auth } from './o-auth-1-auth';
 import { OAuth2Auth } from './o-auth-2-auth';
 
-export const AuthWrapper: FC = () => {
+export const AuthWrapper: FC<{ disabled?: boolean }> = ({ disabled = false }) => {
   const request = useSelector(selectActiveRequest);
 
-  if (!request || !isRequest(request)) {
+  if (!request || !('authentication' in request)) {
     return null;
   }
 
@@ -38,7 +39,9 @@ export const AuthWrapper: FC = () => {
   let authBody: ReactNode = null;
 
   if (type === AUTH_BASIC) {
-    authBody = <BasicAuth />;
+    authBody = <BasicAuth disabled={disabled} />;
+  } else if (type === AUTH_API_KEY) {
+    authBody = <ApiKeyAuth disabled={disabled} />;
   } else if (type === AUTH_OAUTH_2) {
     authBody = <OAuth2Auth />;
   } else if (type === AUTH_HAWK) {
@@ -46,11 +49,11 @@ export const AuthWrapper: FC = () => {
   } else if (type === AUTH_OAUTH_1) {
     authBody = <OAuth1Auth />;
   } else if (type === AUTH_DIGEST) {
-    authBody = <DigestAuth />;
+    authBody = <DigestAuth disabled={disabled} />;
   } else if (type === AUTH_NTLM) {
     authBody = <NTLMAuth />;
   } else if (type === AUTH_BEARER) {
-    authBody = <BearerAuth />;
+    authBody = <BearerAuth disabled={disabled} />;
   } else if (type === AUTH_AWS_IAM) {
     authBody = <AWSAuth />;
   } else if (type === AUTH_NETRC) {
@@ -76,5 +79,5 @@ export const AuthWrapper: FC = () => {
     );
   }
 
-  return <div className='tall'>{authBody}</div>;
+  return <div>{authBody}</div>;
 };

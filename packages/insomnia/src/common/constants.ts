@@ -1,10 +1,9 @@
-import { KeyCombination } from 'insomnia-common';
-import path from 'path';
 import { unreachableCase } from 'ts-assert-unreachable';
 
 import appConfig from '../../config/config.json';
 import { version } from '../../package.json';
-import { getDataDirectory, getPortableExecutableDir } from './electron-helpers';
+import { getPortableExecutableDir } from './electron-helpers';
+import { KeyCombination } from './settings';
 
 const env = process['env'];
 
@@ -25,7 +24,21 @@ export const isDevelopment = () => getAppEnvironment() === 'development';
 export const getSegmentWriteKey = () => appConfig.segmentWriteKeys[(isDevelopment() || env.PLAYWRIGHT) ? 'development' : 'production'];
 export const getSentryDsn = () => appConfig.sentryDsn;
 export const getAppBuildDate = () => new Date(process.env.BUILD_DATE ?? '').toLocaleDateString();
-
+export type AuthType =
+  | 'none'
+  | 'apikey'
+  | 'oauth2'
+  | 'oauth1'
+  | 'basic'
+  | 'digest'
+  | 'bearer'
+  | 'ntlm'
+  | 'hawk'
+  | 'iam'
+  | 'netrc'
+  | 'asap'
+  | 'sha256'
+  | 'sha1';
 export const getBrowserUserAgent = () => encodeURIComponent(
   String(window.navigator.userAgent)
     .replace(new RegExp(`${getAppId()}\\/\\d+\\.\\d+\\.\\d+ `), '')
@@ -69,14 +82,6 @@ export const LARGE_RESPONSE_MB = 5;
 export const HUGE_RESPONSE_MB = 100;
 export const FLEXIBLE_URL_REGEX = /^(http|https):\/\/[\wàâäèéêëîïôóœùûüÿçÀÂÄÈÉÊËÎÏÔŒÙÛÜŸÇ\-_.]+[/\wàâäèéêëîïôóœùûüÿçÀÂÄÈÉÊËÎÏÔŒÙÛÜŸÇ.\-+=:\][@%^*&!#?;$~'(),]*/;
 export const CHECK_FOR_UPDATES_INTERVAL = 1000 * 60 * 60 * 3; // 3 hours
-export const PLUGIN_PATH = path.join(getDataDirectory(), 'plugins');
-export const AUTOBIND_CFG = {
-  methodsToIgnore: [
-    'UNSAFE_componentWillMount',
-    'UNSAFE_componentWillReceiveProps',
-    'UNSAFE_componentWillUpdate',
-  ],
-};
 
 // Available editor key map
 export enum EditorKeyMap {
@@ -272,6 +277,7 @@ const contentTypesMap: Record<string, string[]> = {
 
 // Auth Types
 export const AUTH_NONE = 'none';
+export const AUTH_API_KEY = 'apikey';
 export const AUTH_OAUTH_2 = 'oauth2';
 export const AUTH_OAUTH_1 = 'oauth1';
 export const AUTH_BASIC = 'basic';
@@ -290,6 +296,7 @@ export const JSON_ORDER_PREFIX = '&';
 export const JSON_ORDER_SEPARATOR = '~|';
 
 const authTypesMap: Record<string, string[]> = {
+  [AUTH_API_KEY]: ['API Key', 'API Key Auth'],
   [AUTH_BASIC]: ['Basic', 'Basic Auth'],
   [AUTH_DIGEST]: ['Digest', 'Digest Auth'],
   [AUTH_NTLM]: ['NTLM', 'Microsoft NTLM'],
@@ -408,7 +415,7 @@ export const RESPONSE_CODE_DESCRIPTIONS: Record<number, string> = {
     'An Insomnia plugin threw an error which prevented the request from sending',
   // 100s
   100: 'This interim response indicates that everything so far is OK and that the client should continue with the request or ignore it if it is already finished.',
-  101: 'This code is sent in response to an Upgrade: request header by the client and indicates the protocol the server is switching to. It was introduced to allow migration to an incompatible protocol version, and it is not in common use.',
+  101: 'This code is sent in response to an Upgrade: request header by the client and indicates the protocol the server is switching to.',
   // 200s
   200: 'The request has succeeded.',
   201: 'The request has succeeded and a new resource has been created as a result. This is typically the response sent after POST requests, or some PUT requests.',
@@ -548,6 +555,8 @@ export const WORKSPACE_ID_KEY = '__WORKSPACE_ID__';
 export const BASE_ENVIRONMENT_ID_KEY = '__BASE_ENVIRONMENT_ID__';
 export const EXPORT_TYPE_REQUEST = 'request';
 export const EXPORT_TYPE_GRPC_REQUEST = 'grpc_request';
+export const EXPORT_TYPE_WEBSOCKET_REQUEST = 'websocket_request';
+export const EXPORT_TYPE_WEBSOCKET_PAYLOAD = 'websocket_payload';
 export const EXPORT_TYPE_REQUEST_GROUP = 'request_group';
 export const EXPORT_TYPE_UNIT_TEST_SUITE = 'unit_test_suite';
 export const EXPORT_TYPE_UNIT_TEST = 'unit_test';

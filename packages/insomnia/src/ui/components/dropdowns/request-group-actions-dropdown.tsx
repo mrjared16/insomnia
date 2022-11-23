@@ -2,9 +2,10 @@ import classnames from 'classnames';
 import React, { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 
-import { hotKeyRefs } from '../../../common/hotkeys';
+import { toKebabCase } from '../../../common/misc';
 import { RENDER_PURPOSE_NO_RENDER } from '../../../common/render';
 import * as models from '../../../models';
+import * as requestOperations from '../../../models/helpers/request-operations';
 import type { RequestGroup } from '../../../models/request-group';
 import type { RequestGroupAction } from '../../../plugins';
 import { getRequestGroupActions } from '../../../plugins';
@@ -26,7 +27,7 @@ interface Props extends Partial<DropdownProps> {
   handleShowSettings: (requestGroup: RequestGroup) => any;
 }
 
-interface RequestGroupActionsDropdownHandle {
+export interface RequestGroupActionsDropdownHandle {
     show: () => void;
 }
 
@@ -47,7 +48,10 @@ export const RequestGroupActionsDropdown = forwardRef<RequestGroupActionsDropdow
 
   const create = useCallback((requestType: CreateRequestType) => {
     if (activeWorkspaceId) {
-      createRequest({ parentId: requestGroup._id, requestType, workspaceId: activeWorkspaceId });
+      createRequest({
+        parentId: requestGroup._id,
+        requestType, workspaceId: activeWorkspaceId,
+      });
     }
   }, [activeWorkspaceId, requestGroup._id]);
 
@@ -82,13 +86,22 @@ export const RequestGroupActionsDropdown = forwardRef<RequestGroupActionsDropdow
     createRequestGroup(requestGroup._id);
   }, [requestGroup._id]);
 
+  const handleRename = useCallback(() => {
+    showPrompt({
+      title: 'Rename Folder',
+      defaultValue: requestGroup.name,
+      submitName: 'Rename',
+      selectText: true,
+      label: 'Name',
+      onComplete: name => {
+        requestOperations.update(requestGroup, { name });
+      },
+    });
+  }, [requestGroup]);
+
   const handleDeleteFolder = useCallback(async () => {
     await models.stats.incrementDeletedRequestsForDescendents(requestGroup);
     models.requestGroup.remove(requestGroup);
-  }, [requestGroup]);
-
-  const handleEditEnvironment = useCallback(() => {
-    showModal(EnvironmentEditModal, requestGroup);
   }, [requestGroup]);
 
   const handlePluginClick = useCallback(async ({ label, plugin, action }: RequestGroupAction) => {
@@ -125,27 +138,31 @@ export const RequestGroupActionsDropdown = forwardRef<RequestGroupActionsDropdow
   }, [dropdownRef, loadingActions,  activeEnvironment, requestGroup, activeProject]);
 
   return (
-    <Dropdown ref={dropdownRef} onOpen={onOpen} {...other}>
+    <Dropdown ref={dropdownRef} onOpen={onOpen} dataTestId={`Dropdown-${toKebabCase(requestGroup.name)}`} {...other}>
       <DropdownButton>
         <i className="fa fa-caret-down" />
       </DropdownButton>
 
-      <DropdownItem value="HTTP" onClick={create}>
+      <DropdownItem onClick={() => create('HTTP')}>
         <i className="fa fa-plus-circle" />New HTTP Request
-        <DropdownHint keyBindings={hotKeyRegistry[hotKeyRefs.REQUEST_CREATE_HTTP.id]} />
+        <DropdownHint keyBindings={hotKeyRegistry.request_createHTTP} />
       </DropdownItem>
 
-      <DropdownItem value="GraphQL" onClick={create}>
+      <DropdownItem  onClick={() => create('GraphQL')}>
         <i className="fa fa-plus-circle" />New GraphQL Request
       </DropdownItem>
 
-      <DropdownItem value="gRPC" onClick={create}>
+      <DropdownItem  onClick={() => create('gRPC')}>
         <i className="fa fa-plus-circle" />New gRPC Request
+      </DropdownItem>
+
+      <DropdownItem  onClick={() => create('WebSocket')}>
+        <i className="fa fa-plus-circle" />WebSocket Request
       </DropdownItem>
 
       <DropdownItem onClick={createGroup}>
         <i className="fa fa-folder" /> New Folder
-        <DropdownHint keyBindings={hotKeyRegistry[hotKeyRefs.REQUEST_SHOW_CREATE_FOLDER.id]} />
+        <DropdownHint keyBindings={hotKeyRegistry.request_showCreateFolder} />
       </DropdownItem>
 
       <DropdownDivider />
@@ -154,11 +171,15 @@ export const RequestGroupActionsDropdown = forwardRef<RequestGroupActionsDropdow
         <i className="fa fa-copy" /> Duplicate
       </DropdownItem>
 
-      <DropdownItem onClick={handleEditEnvironment}>
+      <DropdownItem onClick={() => showModal(EnvironmentEditModal, { requestGroup })}>
         <i className="fa fa-code" /> Environment
       </DropdownItem>
 
-      <DropdownItem buttonClass={PromptButton} addIcon onClick={handleDeleteFolder}>
+      <DropdownItem onClick={handleRename}>
+        <i className="fa fa-edit" /> Rename
+      </DropdownItem>
+
+      <DropdownItem buttonClass={PromptButton} onClick={handleDeleteFolder}>
         <i className="fa fa-trash-o" /> Delete
       </DropdownItem>
 
@@ -174,7 +195,7 @@ export const RequestGroupActionsDropdown = forwardRef<RequestGroupActionsDropdow
         </DropdownItem>
       ))}
       <DropdownDivider />
-      <DropdownItem onClick={handleShowSettings}>
+      <DropdownItem onClick={() => handleShowSettings(requestGroup)} dataTestId={`DropdownItemSettings-${toKebabCase(requestGroup.name)}`}>
         <i className="fa fa-wrench" /> Settings
       </DropdownItem>
     </Dropdown>

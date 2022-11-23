@@ -1,86 +1,63 @@
-import { autoBindMethodsForReact } from 'class-autobind-decorator';
-import React, { PureComponent, useState } from 'react';
-import { Tab, TabList, TabPanel, Tabs } from 'react-tabs';
+import React, { forwardRef, Key, useImperativeHandle, useRef, useState } from 'react';
 
-import { AUTOBIND_CFG } from '../../../../common/constants';
 import { docsGitSync } from '../../../../common/documentation';
 import type { GitRepository, OauthProviderName } from '../../../../models/git-repository';
 import { deleteGitRepository } from '../../../../models/helpers/git-repository-operations';
 import { Link } from '../../base/link';
-import { Modal } from '../../base/modal';
+import { type ModalHandle, Modal, ModalProps } from '../../base/modal';
 import { ModalBody } from '../../base/modal-body';
 import { ModalFooter } from '../../base/modal-footer';
 import { ModalHeader } from '../../base/modal-header';
+import { PanelContainer, TabItem, Tabs } from '../../base/tabs';
 import { ErrorBoundary } from '../../error-boundary';
 import { HelpTooltip } from '../../help-tooltip';
 import { CustomRepositorySettingsFormGroup } from './custom-repository-settings-form-group';
 import { GitHubRepositorySetupFormGroup } from './github-repository-settings-form-group';
 import { GitLabRepositorySetupFormGroup } from './gitlab-repository-settings-form-group';
 
-interface State {
+interface GitRepositorySettingsModalOptions {
   gitRepository: GitRepository | null;
+  onSubmitEdits: (gitRepoPatch: Partial<GitRepository>) => Promise<void> | void;
 }
-
-@autoBindMethodsForReact(AUTOBIND_CFG)
-export class GitRepositorySettingsModal extends PureComponent<{}, State> {
-  modal: Modal | null = null;
-  _onSubmitEdits?: ((repo: Partial<GitRepository>) => any) | null;
-
-  state: State = {
+export interface GitRepositorySettingsModalHandle {
+  show: (options: GitRepositorySettingsModalOptions) => void;
+  hide: () => void;
+}
+export const GitRepositorySettingsModal = forwardRef<GitRepositorySettingsModalHandle, ModalProps>((_, ref) => {
+  const modalRef = useRef<ModalHandle>(null);
+  const [state, setState] = useState<GitRepositorySettingsModalOptions>({
     gitRepository: null,
-  };
+    onSubmitEdits: () => {},
+  });
 
-  _setModalRef(modal: Modal) {
-    this.modal = modal;
-  }
+  useImperativeHandle(ref, () => ({
+    hide: () => {
+      modalRef.current?.hide();
+    },
+    show: options => {
+      setState(options);
+      modalRef.current?.show();
+    },
+  }), []);
 
-  show(options: {
-    gitRepository: GitRepository | null;
-    onSubmitEdits: (repo: Partial<GitRepository>) => any;
-  }) {
-    this._onSubmitEdits = options.onSubmitEdits;
-    const { gitRepository } = options;
-
-    this.setState({ gitRepository });
-    this.modal?.show();
-  }
-
-  hide() {
-    this.modal?.hide();
-  }
-
-  render() {
-    const _handleReset = async () => {
-      const { gitRepository } = this.state;
-
-      if (!gitRepository) {
-        // Nothing to do
-        return;
-      }
-
-      await deleteGitRepository(gitRepository);
-      this.hide();
-    };
-
-    const _handleSubmitEdit = async (patch: Partial<GitRepository>) => {
-      if (this._onSubmitEdits) {
-        this._onSubmitEdits({ ...this.state.gitRepository, ...patch });
-      }
-
-      this.hide();
-    };
-
-    return (
-      <Modal ref={this._setModalRef} {...this.props}>
-        <ModalForm
-          onSubmit={patch => _handleSubmitEdit(patch)}
-          onReset={_handleReset}
-          gitRepository={this.state.gitRepository}
-        />
-      </Modal>
-    );
-  }
-}
+  const { gitRepository, onSubmitEdits } = state;
+  return (
+    <Modal ref={modalRef}>
+      <ModalForm
+        onSubmit={patch => {
+          onSubmitEdits({ ...gitRepository, ...patch });
+          modalRef.current?.hide();
+        }}
+        onReset={() => {
+          gitRepository && deleteGitRepository(gitRepository);
+          modalRef.current?.hide();
+        }}
+        gitRepository={gitRepository}
+      />
+    </Modal>
+  );
+});
+GitRepositorySettingsModal.displayName = 'GitRepositorySettingsModal';
 
 interface Props {
   gitRepository: GitRepository | null;
@@ -104,7 +81,6 @@ const ModalForm = (props: Props) => {
 
   const [selectedTab, setTab] = useState<OauthProviderName>(initialTab);
 
-  const selectedTabIndex = oauth2Formats.indexOf(selectedTab);
   return (
     <>
       <ModalHeader>
@@ -118,60 +94,34 @@ const ModalForm = (props: Props) => {
       <ModalBody key={gitRepository ? gitRepository._id : 'new'}>
         <ErrorBoundary>
           <Tabs
-            className="react-tabs"
-            onSelect={(index: number) => setTab(oauth2Formats[index])}
-            selectedIndex={selectedTabIndex}
+            aria-label="Git repository settings tabs"
+            selectedKey={selectedTab}
+            onSelectionChange={(key: Key) => setTab(key as OauthProviderName)}
           >
-            <TabList>
-              <Tab>
-                <button>
-                  <i className="fa fa-github" /> GitHub
-                </button>
-              </Tab>
-              <Tab>
-                <button>
-                  <i className="fa fa-gitlab" /> GitLab
-                </button>
-              </Tab>
-              <Tab>
-                <button>
-                  <i className="fa fa-code-fork" /> Git
-                </button>
-              </Tab>
-            </TabList>
-            <TabPanel
-              className="tabs__tab-panel"
-              selectedClassName="pad pad-top-sm"
-              style={{
-                overflow: 'hidden',
-              }}
-            >
-              <GitHubRepositorySetupFormGroup
-                uri={gitRepository?.uri}
-                onSubmit={onSubmit}
-              />
-            </TabPanel>
-            <TabPanel
-              className="tabs__tab-panel"
-              selectedClassName="pad pad-top-sm"
-              style={{
-                overflow: 'hidden',
-              }}
-            >
-              <GitLabRepositorySetupFormGroup
-                uri={gitRepository?.uri}
-                onSubmit={onSubmit}
-              />
-            </TabPanel>
-            <TabPanel
-              className="tabs__tab-panel scrollable"
-              selectedClassName="pad pad-top-sm"
-            >
-              <CustomRepositorySettingsFormGroup
-                gitRepository={gitRepository}
-                onSubmit={onSubmit}
-              />
-            </TabPanel>
+            <TabItem key={oauth2Formats[0]} title={<><i className="fa fa-github" /> GitHub</>}>
+              <PanelContainer className="pad pad-top-sm">
+                <GitHubRepositorySetupFormGroup
+                  uri={gitRepository?.uri}
+                  onSubmit={onSubmit}
+                />
+              </PanelContainer>
+            </TabItem>
+            <TabItem key={oauth2Formats[1]} title={<><i className="fa fa-gitlab" /> GitLab</>}>
+              <PanelContainer className="pad pad-top-sm">
+                <GitLabRepositorySetupFormGroup
+                  uri={gitRepository?.uri}
+                  onSubmit={onSubmit}
+                />
+              </PanelContainer>
+            </TabItem>
+            <TabItem key={oauth2Formats[2]} title={<><i className="fa fa-code-fork" /> Git</>}>
+              <PanelContainer className="pad pad-top-sm">
+                <CustomRepositorySettingsFormGroup
+                  gitRepository={gitRepository}
+                  onSubmit={onSubmit}
+                />
+              </PanelContainer>
+            </TabItem>
           </Tabs>
         </ErrorBoundary>
       </ModalBody>

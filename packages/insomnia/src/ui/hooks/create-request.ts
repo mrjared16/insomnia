@@ -1,6 +1,5 @@
 import { unreachableCase } from 'ts-assert-unreachable';
 
-import { SegmentEvent, trackSegmentEvent } from '../../common/analytics';
 import {
   CONTENT_TYPE_GRAPHQL,
   CONTENT_TYPE_JSON,
@@ -12,8 +11,9 @@ import { isGrpcRequestId } from '../../models/grpc-request';
 import { GrpcRequestMeta } from '../../models/grpc-request-meta';
 import { RequestMeta } from '../../models/request-meta';
 import { WorkspaceMeta } from '../../models/workspace-meta';
+import { SegmentEvent, trackSegmentEvent } from '../analytics';
 import { showModal } from '../components/modals';
-import ProtoFilesModal from '../components/modals/proto-files-modal';
+import { ProtoFilesModal } from '../components/modals/proto-files-modal';
 
 export const updateActiveWorkspaceMeta = async (
   patch: Partial<WorkspaceMeta>,
@@ -50,7 +50,7 @@ export const setActiveRequest = async (
   });
 };
 
-export type CreateRequestType = 'HTTP' | 'gRPC' | 'GraphQL';
+export type CreateRequestType = 'HTTP' | 'gRPC' | 'GraphQL' | 'WebSocket';
 type RequestCreator = (input: {
   parentId: string;
   requestType: CreateRequestType;
@@ -104,6 +104,16 @@ export const createRequest: RequestCreator = async ({
         parentId,
         method: METHOD_GET,
         name: 'New Request',
+      });
+      models.stats.incrementCreatedRequests();
+      setActiveRequest(request._id, workspaceId);
+      break;
+    }
+
+    case 'WebSocket': {
+      const request = await models.webSocketRequest.create({
+        parentId,
+        name: 'New WebSocket Request',
       });
       models.stats.incrementCreatedRequests();
       setActiveRequest(request._id, workspaceId);

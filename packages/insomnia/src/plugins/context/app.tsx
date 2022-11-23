@@ -2,7 +2,6 @@ import * as electron from 'electron';
 import React from 'react';
 import type ReactDOM from 'react-dom';
 
-import * as analytics from '../../../src/common/analytics';
 import { axiosRequest as axios } from '../../../src/network/axios-request';
 import { getAppPlatform, getAppVersion } from '../../common/constants';
 import type { RenderPurpose } from '../../common/render';
@@ -11,6 +10,7 @@ import {
   RENDER_PURPOSE_NO_RENDER,
   RENDER_PURPOSE_SEND,
 } from '../../common/render';
+import * as analytics from '../../ui/analytics';
 import { HtmlElementWrapper } from '../../ui/components/html-element-wrapper';
 import { showAlert, showModal, showPrompt } from '../../ui/components/modals';
 import { PromptModalOptions } from '../../ui/components/modals/prompt-modal';
@@ -46,9 +46,9 @@ export interface AppContext {
   alert: (
     title: string,
     message?: string
-  ) => Promise<undefined> | ReturnType<typeof showAlert>;
+  ) => ReturnType<typeof showAlert>;
   dialog: (title: string, body: HTMLElement, options?: DialogOptions) => void;
-  prompt: (title: string, options?: Pick<PromptModalOptions, 'label' | 'defaultValue' | 'submitName' | 'cancelable'>) => Promise<string>;
+  prompt: (title: string, options?: Pick<PromptModalOptions, 'label' | 'defaultValue' | 'submitName'>) => Promise<string>;
   getPath: (name: string) => string;
   getInfo: () => AppInfo;
   showSaveDialog: (options?: ShowDialogOptions) => Promise<string | null>;
@@ -66,7 +66,6 @@ export interface PrivateProperties {
   axios: typeof axios;
   analytics: typeof analytics;
   loadRendererModules: () => Promise<{
-    insomniaComponents: any;
     ReactDOM: typeof ReactDOM;
     React: typeof React;
   } | {}>;
@@ -130,10 +129,6 @@ export function init(renderPurpose: RenderPurpose = RENDER_PURPOSE_GENERAL): {
             title,
             ...(options || ({} as Record<string, any>)),
 
-            onCancel() {
-              reject(new Error(`Prompt ${title} cancelled`));
-            },
-
             onComplete(value: string) {
               shouldResolve = true;
               resolveWith = value;
@@ -144,6 +139,7 @@ export function init(renderPurpose: RenderPurpose = RENDER_PURPOSE_GENERAL): {
               if (shouldResolve && resolveWith !== null) {
                 resolve(resolveWith);
               }
+              reject(new Error(`Prompt ${title} cancelled`));
             },
           });
         });
@@ -229,12 +225,10 @@ export function init(renderPurpose: RenderPurpose = RENDER_PURPOSE_GENERAL): {
 
         const ReactDOM = await import('react-dom');
         const React = await import('react');
-        const insomniaComponents = await import('insomnia-components');
 
         return {
           ReactDOM,
           React,
-          insomniaComponents,
         };
       },
     },

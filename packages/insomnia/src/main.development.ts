@@ -1,10 +1,10 @@
 import electron, { app, ipcMain, session } from 'electron';
+import { BrowserWindow } from 'electron';
 import contextMenu from 'electron-context-menu';
 import installExtension, { REACT_DEVELOPER_TOOLS, REDUX_DEVTOOLS } from 'electron-devtools-installer';
 import path from 'path';
 
 import appConfig from '../config/config.json';
-import { SegmentEvent, trackSegmentEvent } from './common/analytics';
 import { changelogUrl, getAppVersion, isDevelopment, isMac } from './common/constants';
 import { database } from './common/database';
 import { disableSpellcheckerDownload } from './common/electron-helpers';
@@ -13,6 +13,7 @@ import { validateInsomniaConfig } from './common/validate-insomnia-config';
 import { registerElectronHandlers } from './main/ipc/electron';
 import { registergRPCHandlers } from './main/ipc/grpc';
 import { registerMainHandlers } from './main/ipc/main';
+import { registerWebSocketHandlers } from './main/network/websocket';
 import { initializeSentry, sentryWatchAnalyticsEnabled } from './main/sentry';
 import { checkIfRestartNeeded } from './main/squirrel-startup';
 import * as updates from './main/updates';
@@ -29,7 +30,6 @@ if (checkIfRestartNeeded()) {
 }
 
 initializeLogging();
-const commandLineArgs = process.argv.slice(1);
 log.info(`Running version ${getAppVersion()}`);
 
 // Override the Electron userData path
@@ -70,6 +70,7 @@ app.on('ready', async () => {
   registerElectronHandlers();
   registerMainHandlers();
   registergRPCHandlers();
+  registerWebSocketHandlers();
 
   disableSpellcheckerDownload();
 
@@ -119,12 +120,6 @@ if (defaultProtocolSuccessful) {
   }
 }
 
-function _addUrlToOpen(event: Electron.Event, url: string) {
-  event.preventDefault();
-  commandLineArgs.push(url);
-}
-
-app.on('open-url', _addUrlToOpen);
 // Quit when all windows are closed (except on Mac).
 app.on('window-all-closed', () => {
   if (!isMac()) {
@@ -136,6 +131,7 @@ app.on('activate', (_error, hasVisibleWindows) => {
   // Create a new window when clicking the doc icon if there isn't one open
   if (!hasVisibleWindows) {
     try {
+      console.log('[main] creating new window for MacOS activate event');
       windowUtils.createWindow();
     } catch (error) {
       // This might happen if 'ready' hasn't fired yet. So we're just going
@@ -147,44 +143,47 @@ app.on('activate', (_error, hasVisibleWindows) => {
 
 const _launchApp = async () => {
   await _trackStats();
-
-  app.removeListener('open-url', _addUrlToOpen);
-  const window = windowUtils.createWindow();
-
+  let window: BrowserWindow;
   // Handle URLs sent via command line args
   ipcMain.once('window-ready', () => {
-    // @ts-expect-error -- TSCONVERSION
-    commandLineArgs.length && window.send('run-command', commandLineArgs[0]);
+    console.log('[main] Window ready, handling command line arguments', process.argv);
+    const args = process.argv.slice(1).filter(a => a !== '.');
+    if (args.length) {
+      window.webContents.send('shell:open', args.join());
+    }
   });
-  // Called when second instance launched with args (Windows)
-  // @TODO: Investigate why this closes electron when using playwright (tested on macOS)
-  // and find a better solution.
+  // Disable deep linking in playwright e2e tests in order to run multiple tests in parallel
   if (!process.env.PLAYWRIGHT) {
+    // Deep linking logic - https://www.electronjs.org/docs/latest/tutorial/launch-app-from-url-in-another-app
     const gotTheLock = app.requestSingleInstanceLock();
     if (!gotTheLock) {
       console.error('[app] Failed to get instance lock');
-      return;
+      app.quit();
+    } else {
+      // Called when second instance launched with args (Windows/Linux)
+      app.on('second-instance', (_1, args) => {
+        console.log('Second instance listener received:', args.join('||'));
+        if (window) {
+          if (window.isMinimized()) {
+            window.restore();
+          }
+          window.focus();
+        }
+        const lastArg = args.slice(-1).join();
+        console.log('[main] Open Deep Link URL sent from second instance', lastArg);
+        window.webContents.send('shell:open', lastArg);
+      });
+      window = windowUtils.createWindow();
+
+      app.on('open-url', (_event, url) => {
+        console.log('[main] Open Deep Link URL', url);
+        window.webContents.send('shell:open', url);
+      });
     }
+  } else {
+    window = windowUtils.createWindow();
   }
 
-  app.on('second-instance', () => {
-    // Someone tried to run a second instance, we should focus our window.
-    if (window) {
-      if (window.isMinimized()) {
-        window.restore();
-      }
-      window.focus();
-    }
-  });
-  // Handle URLs when app already open
-  app.addListener('open-url', (_event, url) => {
-    window.webContents.send('run-command', url);
-    // Apparently a timeout is needed because Chrome steals back focus immediately
-    // after opening the URL.
-    setTimeout(() => {
-      window.focus();
-    }, 100);
-  });
   // Don't send origin header from Insomnia because we're not technically using CORS
   session.defaultSession.webRequest.onBeforeSendHeaders((details, fn) => {
     delete details.requestHeaders.Origin;
@@ -216,8 +215,6 @@ async function _trackStats() {
     launches: oldStats.launches + 1,
   });
 
-  trackSegmentEvent(SegmentEvent.appStarted, {}, { queueable: true });
-
   ipcMain.once('window-ready', () => {
     const { currentVersion, launches, lastVersion } = stats;
 
@@ -227,7 +224,6 @@ async function _trackStats() {
       return;
     }
 
-    const { BrowserWindow } = electron;
     const notification: ToastNotification = {
       key: `updated-${currentVersion}`,
       url: changelogUrl(),

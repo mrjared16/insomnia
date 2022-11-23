@@ -1,5 +1,3 @@
-import { HttpVersions, Settings as BaseSettings, UpdateChannel } from 'insomnia-common';
-
 import {
   getAppDefaultDarkTheme,
   getAppDefaultLightTheme,
@@ -7,6 +5,7 @@ import {
 } from '../common/constants';
 import { database as db } from '../common/database';
 import * as hotkeys from '../common/hotkeys';
+import { HttpVersions, KeyboardShortcut, Settings as BaseSettings, UpdateChannel } from '../common/settings';
 import { getMonkeyPatchedControlledSettings, omitControlledSettings } from './helpers/settings';
 import type { BaseModel } from './index';
 
@@ -42,7 +41,6 @@ export function init(): BaseSettings {
     editorKeyMap: 'default',
     editorLineWrapping: true,
     enableAnalytics: false,
-    environmentHighlightColorStyle: 'sidebar-indicator',
     showVariableSourceAndValue: false,
     filterResponsesByEnv: false,
     followRedirects: true,
@@ -56,15 +54,15 @@ export function init(): BaseSettings {
      * Only existing users updating from an older version should see the analytics prompt.
      * So by default this flag is set to false, and is toggled to true during initialization for new users.
      */
-    hasPromptedAnalytics: false,
+    hasPromptedAnalytics: false || Boolean(process.env.INSOMNIA_INCOGNITO_MODE),
     hotKeyRegistry: hotkeys.newDefaultRegistry(),
     httpProxy: '',
     httpsProxy: '',
     grpcProxy: '',
-    incognitoMode: false,
+    incognitoMode: false || Boolean(process.env.INSOMNIA_INCOGNITO_MODE),
     lightTheme: getAppDefaultLightTheme(),
     maxHistoryResponses: 20,
-    maxRedirects: -1,
+    maxRedirects: 10,
     maxTimelineDataSizeKB: 10,
     noProxy: '',
     grpcNoProxy: '',
@@ -76,7 +74,8 @@ export function init(): BaseSettings {
     grpcProxyEnabled: false,
     showPasswords: false,
     theme: getAppDefaultTheme(),
-    timeout: 0,
+    // milliseconds
+    timeout: 30_000,
     updateAutomatically: true,
     updateChannel: UpdateChannel.stable,
     useBulkHeaderEditor: false,
@@ -132,6 +131,17 @@ export async function getOrCreate() {
  * Ensure map is updated when new hotkeys are added
  */
 function migrateEnsureHotKeys(settings: Settings): Settings {
-  settings.hotKeyRegistry = { ...hotkeys.newDefaultRegistry(), ...settings.hotKeyRegistry };
+  const defaultHotKeyRegistry = hotkeys.newDefaultRegistry();
+
+  // Remove any hotkeys that are no longer in the default registry
+  const hotKeyRegistry = (Object.keys(settings.hotKeyRegistry) as KeyboardShortcut[]).reduce((newHotKeyRegistry, key) => {
+    if (key in defaultHotKeyRegistry) {
+      newHotKeyRegistry[key] = settings.hotKeyRegistry[key];
+    }
+
+    return newHotKeyRegistry;
+  }, {} as Settings['hotKeyRegistry']);
+
+  settings.hotKeyRegistry = { ...defaultHotKeyRegistry, ...hotKeyRegistry };
   return settings;
 }

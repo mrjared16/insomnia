@@ -1,9 +1,8 @@
-import classnames from 'classnames';
 import React, { forwardRef, ReactElement, useCallback, useState } from 'react';
-import { Tab, TabList, TabPanel, Tabs } from 'react-tabs';
+import styled from 'styled-components';
 
-import { Button } from './base/button';
-import { CodeEditor, UnconnectedCodeEditor } from './codemirror/code-editor';
+import { PanelContainer, TabItem, Tabs } from './base/tabs';
+import { CodeEditor, CodeEditorHandle } from './codemirror/code-editor';
 import { MarkdownPreview } from './markdown-preview';
 
 interface Props {
@@ -16,7 +15,45 @@ interface Props {
   tall?: boolean;
 }
 
-export const MarkdownEditor = forwardRef<UnconnectedCodeEditor, Props>(({
+interface MarkdownEditProps {
+  withDynamicHeight: boolean;
+}
+
+const Wrapper = styled.div({
+  border: '1px solid var(--hl-md)',
+  boxSizing: 'border-box',
+});
+
+const MarkdownEdit = styled.div<MarkdownEditProps>(({ withDynamicHeight }) => ({
+  padding: 'var(--padding-xs) var(--padding-sm)',
+
+  ...withDynamicHeight ? {
+    '.CodeMirror-scroll': {
+      // Not sure why this style doesn't work on .CodeMirror...
+      maxHeight: '30vh',
+    },
+
+    '.input': {
+      height: 'auto !important',
+    },
+  } : {
+    height: '100%',
+    display: 'grid',
+    gridTemplateRows: '1fr auto',
+
+    '.input': {
+      height: '100%',
+    },
+  },
+}));
+
+const MarkdownPreiview = styled.div({
+  maxHeight: '35vh',
+  padding: 'var(--padding-sm)',
+  overflow: 'auto',
+});
+
+export const MarkdownEditor = forwardRef<CodeEditorHandle, Props>(({
   mode,
   placeholder,
   defaultPreviewMode,
@@ -27,9 +64,6 @@ export const MarkdownEditor = forwardRef<UnconnectedCodeEditor, Props>(({
 }, ref): ReactElement => {
   // default value is added here to capture the original class component's behavior, but this way cuts the flow of prop change event after the initial rendering
   const [markdown, setMarkdown] = useState(defaultValue);
-  const classes = classnames('react-tabs', 'markdown-editor', 'outlined', className, {
-    'markdown-editor--dynamic-height': !tall,
-  });
 
   const handleChange = useCallback((markdown: string) => {
     onChange(markdown);
@@ -37,38 +71,42 @@ export const MarkdownEditor = forwardRef<UnconnectedCodeEditor, Props>(({
   }, [onChange]);
 
   return (
-    <Tabs className={classes} defaultIndex={defaultPreviewMode ? 1 : 0}>
-      <TabList>
-        <Tab tabIndex="-1">
-          <Button value="Write">Write</Button>
-        </Tab>
-        <Tab tabIndex="-1">
-          <Button value="Preview">Preview</Button>
-        </Tab>
-      </TabList>
-      <TabPanel className="react-tabs__tab-panel markdown-editor__edit">
-        <div className="form-control form-control--outlined">
-          <CodeEditor
-            ref={ref}
-            hideGutters
-            hideLineNumbers
-            dynamicHeight={!tall}
-            manualPrettify
-            noStyleActiveLine
-            enableNunjucks
-            mode={mode || 'text/x-markdown'}
-            placeholder={placeholder}
-            debounceMillis={300}
-            defaultValue={markdown}
-            onChange={handleChange}
-          />
-        </div>
-        <div className="txt-sm italic faint">Styling with Markdown is supported</div>
-      </TabPanel>
-      <TabPanel className="react-tabs__tab-panel markdown-editor__preview">
-        <MarkdownPreview markdown={markdown} />
-      </TabPanel>
-    </Tabs>
+    <Wrapper className={className}>
+      <Tabs
+        aria-label="Markdown editor tabs"
+        defaultSelectedKey={defaultPreviewMode ? 'preview' : 'write' }
+      >
+        <TabItem key="write" title="Write">
+          <MarkdownEdit withDynamicHeight={!tall}>
+            <div className='form-control form-control--outlined'>
+              <CodeEditor
+                ref={ref}
+                hideGutters
+                hideLineNumbers
+                dynamicHeight={!tall}
+                showPrettifyButton
+                noStyleActiveLine
+                enableNunjucks
+                mode={mode || 'text/x-markdown'}
+                placeholder={placeholder}
+                defaultValue={markdown}
+                onChange={handleChange}
+              />
+            </div>
+            <div className='txt-sm italic faint'>
+              Styling with Markdown is supported
+            </div>
+          </MarkdownEdit>
+        </TabItem>
+        <TabItem key="preview" title="Preview">
+          <MarkdownPreiview>
+            <PanelContainer className="markdown-editor__preview">
+              <MarkdownPreview markdown={markdown} />
+            </PanelContainer>
+          </MarkdownPreiview>
+        </TabItem>
+      </Tabs>
+    </Wrapper>
   );
 });
 MarkdownEditor.displayName = 'MarkdownEditor';

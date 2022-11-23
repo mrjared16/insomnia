@@ -1,5 +1,3 @@
-import { reject } from 'ramda';
-
 import { Converter, ImportRequest, Parameter } from '../entities';
 import {
   Auth as V200Auth,
@@ -21,6 +19,7 @@ import {
   Header as V210Header,
   HttpsSchemaGetpostmanComJsonCollectionV210 as V210Schema,
   Item as V210Item,
+  QueryParam,
   Request1 as V210Request1,
   UrlEncodedParameter as V210UrlEncodedParameter,
   Variable2 as V210Variable2,
@@ -55,6 +54,18 @@ const POSTMAN_SCHEMA_V2_0 =
   'https://schema.getpostman.com/json/collection/v2.0.0/collection.json';
 const POSTMAN_SCHEMA_V2_1 =
   'https://schema.getpostman.com/json/collection/v2.1.0/collection.json';
+
+const mapGrantTypeToInsomniaGrantType = (grantType: string) => {
+  if (grantType === 'authorization_code_with_pkce') {
+    return 'authorization_code';
+  }
+
+  if (grantType === 'password_credentials') {
+    return 'password';
+  }
+
+  return grantType;
+};
 
 export class ImportPostman {
   collection;
@@ -111,6 +122,11 @@ export class ImportPostman {
 
     const { authentication, headers } = this.importAuthentication(request.auth, request.header as Header[]);
 
+    let parameters = [] as Parameter[];
+
+    if (typeof request.url === 'object' && request.url.query) {
+      parameters = this.importParameters(request.url?.query);
+    }
     return {
       parentId,
       _id: `__REQ_${requestCount++}__`,
@@ -118,6 +134,7 @@ export class ImportPostman {
       name,
       description: (request.description as string) || '',
       url: this.importUrl(request.url),
+      parameters: parameters,
       method: request.method || 'GET',
       headers: headers.map(({ key, value }) => ({
         name: key,
@@ -126,6 +143,17 @@ export class ImportPostman {
       body: this.importBody(request.body, headers.find(({ key }) => key === 'Content-Type')?.value),
       authentication,
     };
+  };
+
+  importParameters = (parameters: QueryParam[]): Parameter[] => {
+    if (!parameters || parameters?.length === 0) {
+      return [];
+    }
+    return parameters.map(({ key, value, disabled }) => ({
+      name: key,
+      value,
+      disabled: disabled || false,
+    }) as Parameter);
   };
 
   importFolderItem = ({ name, description }: Folder, parentId: string) => {
@@ -164,6 +192,11 @@ export class ImportPostman {
   importUrl = (url?: Url | string) => {
     if (!url) {
       return '';
+    }
+
+    // remove ? and everything after it if there are QueryParams strictly defined
+    if (typeof url === 'object' && url.query && url.raw?.includes('?')) {
+      return url.raw?.slice(0, url.raw.indexOf('?')) || '';
     }
 
     if (typeof url === 'object' && url.raw) {
@@ -287,7 +320,7 @@ export class ImportPostman {
     // It is a business logic decision to remove the "Authorization" header.
     // If you think about it, this makes sense because if you've used Insomnia to fill out an Authorization form (e.g. Basic Auth), you wouldn't then also want the header to be added separately.
     // If users want to manually set up these headers they still aboslutely can, of course, but we try to keep thigns simple and help users out.
-    const headers = reject(isAuthorizationHeader, originalHeaders);
+    const headers = originalHeaders.filter(h => !isAuthorizationHeader(h));
 
     if (!authentication) {
       if (authorizationHeader) {
@@ -370,6 +403,12 @@ export class ImportPostman {
           headers,
         };
 
+      case 'apikey':
+        return {
+          authentication: this.importApiKeyAuthentication(authentication),
+          headers,
+        };
+
       default:
         return {
           authentication: {},
@@ -440,7 +479,7 @@ export class ImportPostman {
         service: credentials?.[3],
         ...(sessionToken ? { sessionToken } : {}),
       },
-      headers: reject(isAMZSecurityTokenHeader, headers),
+      headers: headers.filter(h => !isAMZSecurityTokenHeader(h)),
     };
   };
 
@@ -649,6 +688,19 @@ export class ImportPostman {
 
   };
 
+  importApiKeyAuthentication = (auth: Authetication) => {
+    if (!auth.apikey) {
+      return {};
+    }
+    const apikey = auth.apikey as V210Auth['apikey'];
+    return {
+      type: 'apikey',
+      key: this.findValueByKey(apikey, 'key'),
+      value: this.findValueByKey(apikey, 'value'),
+      addTo: this.findValueByKey(apikey, 'in')  === 'query' ? 'queryParams' : 'header',
+      disabled: false,
+    };
+  };
   importOauth2Authentication = (auth: Authetication) => {
     if (!auth.oauth2) {
       return {};
@@ -658,14 +710,23 @@ export class ImportPostman {
     // Note: We only support importing OAuth2 configuration from Postman v2.1
     if (schema === POSTMAN_SCHEMA_V2_1) {
       const oauth2 = auth.oauth2 as V210Auth['oauth2'];
+      const grantTypeField = this.findValueByKey(oauth2, 'grant_type');
+      const grantType = mapGrantTypeToInsomniaGrantType(grantTypeField);
+
       return {
         type: 'oauth2',
         disabled: false,
+        pkceMethod: this.findValueByKey(oauth2, 'challengeAlgorithm'),
+        state: this.findValueByKey(oauth2, 'state'),
+        scope: this.findValueByKey(oauth2, 'scope'),
+        tokenPrefix: this.findValueByKey(oauth2, 'headerPrefix'),
+        credentialsInBody: this.findValueByKey(oauth2, 'addTokenTo') !== 'header',
         accessTokenUrl: this.findValueByKey(oauth2, 'accessTokenUrl'),
         authorizationUrl: this.findValueByKey(oauth2, 'authUrl'),
-        grantType: this.findValueByKey(oauth2, 'grant_type'),
-        password: '',
-        username: '',
+        grantType,
+        password: this.findValueByKey(oauth2, 'password'),
+        username: this.findValueByKey(oauth2, 'username'),
+        usePkce: grantTypeField === 'authorization_code_with_pkce' ? true : undefined,
         clientId: this.findValueByKey(oauth2, 'clientId'),
         clientSecret: this.findValueByKey(oauth2, 'clientSecret'),
         redirectUrl: this.findValueByKey(oauth2, 'redirect_uri'),

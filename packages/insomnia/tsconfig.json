@@ -13,6 +13,7 @@
     "send-request",
     "src",
     "vite.config.ts",
+    "vite-plugin-electron-node-require"
   ],
   "exclude": [
     "**/@types/mocha",
@@ -23,5 +24,6 @@
     "src/coverage",
     "src/main.min.js",
     "src/preload.js",
+    "svgr.config.js",
   ],
 }

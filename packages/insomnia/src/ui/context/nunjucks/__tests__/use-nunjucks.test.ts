@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { renderHook } from '@testing-library/react-hooks';
+import { renderHook } from '@testing-library/react';
 import { mocked } from 'jest-mock';
 import configureMockStore from 'redux-mock-store';
 import thunk from 'redux-thunk';
-import { PromiseValue } from 'type-fest';
+import type { PromiseValue } from 'type-fest';
 
 import { globalBeforeEach } from '../../../../__jest__/before-each';
 import { reduxStateForTest } from '../../../../__jest__/redux-state-for-test';
@@ -83,34 +83,6 @@ describe('useNunjucks', () => {
       expect(getRenderContextAncestorsMock).toBeCalledWith(request);
       expect(getRenderContextMock).toBeCalledWith({
         request,
-        environmentId: environment._id,
-        ancestors: mockAncestors,
-      });
-    });
-
-    it('should get context using the active entities - no request', async () => {
-      // Arrange
-      const workspace = await models.workspace.create();
-      await models.workspaceMeta.getOrCreateByParentId(workspace._id);
-      const environment = await models.environment.getOrCreateForParentId(workspace._id);
-
-      await models.workspaceMeta.updateByParentId(workspace._id, {
-        activeEnvironmentId: environment._id,
-      });
-
-      const store = mockStore(await reduxStateForTest({
-        activeActivity: ACTIVITY_DEBUG,
-        activeWorkspaceId: workspace._id,
-      }));
-
-      // Act
-      const { result } = renderHook(useNunjucks, { wrapper: withReduxStore(store) });
-      await result.current.handleGetRenderContext();
-
-      // Assert
-      expect(getRenderContextAncestorsMock).toBeCalledWith(workspace);
-      expect(getRenderContextMock).toBeCalledWith({
-        request: undefined,
         environmentId: environment._id,
         ancestors: mockAncestors,
       });

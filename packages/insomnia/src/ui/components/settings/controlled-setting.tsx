@@ -1,8 +1,8 @@
-import { Settings } from 'insomnia-common';
-import React, { FC, Fragment } from 'react';
+import React, { FC, Fragment, PropsWithChildren } from 'react';
 import { useSelector } from 'react-redux';
 import styled from 'styled-components';
 
+import { Settings } from '../../../common/settings';
 import { getControlledStatus } from '../../../models/helpers/settings';
 import { selectSettings } from '../../redux/selectors';
 import { HelpTooltip } from '../help-tooltip';
@@ -42,7 +42,7 @@ const HelperText = styled.span({
   fontStyle: 'italic',
 });
 
-export const ControlledSetting: FC<{ setting: keyof Settings }> = ({ children, setting }) => {
+export const ControlledSetting: FC<PropsWithChildren<{ setting: keyof Settings }>> = ({ children, setting }) => {
   const settings = useSelector(selectSettings);
   const { isControlled, controller } = getControlledStatus(settings)(setting);
 

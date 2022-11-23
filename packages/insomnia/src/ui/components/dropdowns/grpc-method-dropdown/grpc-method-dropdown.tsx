@@ -1,23 +1,45 @@
-import { Dropdown, DropdownDivider, DropdownItem, Tooltip } from 'insomnia-components';
+import { MethodDefinition } from '@grpc/grpc-js';
 import React, { Fragment, FunctionComponent, useMemo } from 'react';
 import styled from 'styled-components';
 
-import type { GrpcMethodInfo } from '../../../../common/grpc-paths';
 import {
+  getGrpcPathSegments,
   getShortGrpcPath,
   groupGrpcMethodsByPackage,
   NO_PACKAGE_KEY,
 } from '../../../../common/grpc-paths';
-import type { GrpcMethodDefinition } from '../../../../network/grpc/method';
+import { Dropdown } from '../../base/dropdown/dropdown';
+import { DropdownButton } from '../../base/dropdown/dropdown-button';
+import { DropdownDivider } from '../../base/dropdown/dropdown-divider';
+import { DropdownItem } from '../../base/dropdown/dropdown-item';
 import { GrpcMethodTag } from '../../tags/grpc-method-tag';
-import { GrpcMethodDropdownButton } from './grpc-method-dropdown-button';
+import { Button } from '../../themed-button';
+import { Tooltip } from '../../tooltip';
+
+const DropdownMethodButton = styled(Button).attrs({
+  variant: 'text',
+  size:'medium',
+  radius:'0',
+  className: 'tall wide',
+})({
+  height: '100%',
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+});
+
+const DropdownMethodButtonLabel = styled.div({
+  display: 'flex',
+  alignItems: 'center',
+  gap: 'var(--padding-xs)',
+});
 
 interface Props {
   disabled?: boolean;
-  methods: GrpcMethodDefinition[];
-  selectedMethod?: GrpcMethodDefinition;
-  handleChange: (arg0: string) => Promise<void>;
-  handleChangeProtoFile: (arg0: string) => Promise<void>;
+  methods: MethodDefinition<any, any>[];
+  selectedMethod?: MethodDefinition<any, any>;
+  handleChange: (arg0: string) => void;
+  handleChangeProtoFile: () => void;
 }
 
 const NormalCase = styled.span`
@@ -31,15 +53,28 @@ export const GrpcMethodDropdown: FunctionComponent<Props> = ({
   handleChange,
   handleChangeProtoFile,
 }) => {
-  const dropdownButton = useMemo(
-    () => <GrpcMethodDropdownButton fullPath={selectedMethod?.path} />,
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- TSCONVERSION this error appears to be correct, actually
-    [selectedMethod?.path],
-  );
-  const groupedByPkg = useMemo(() => groupGrpcMethodsByPackage(methods), [methods]);
+  const groupedByPkg = groupGrpcMethodsByPackage(methods);
+  const useLabel = (fullPath?: string) =>
+    useMemo(() => {
+      if (fullPath) {
+        const segments = getGrpcPathSegments(fullPath);
+        return getShortGrpcPath(segments, fullPath);
+      }
+
+      return 'Select Method';
+    }, [fullPath]);
   return (
-    <Dropdown className="tall wide" renderButton={dropdownButton}>
-      {/* @ts-expect-error this appears to be a genuine error since value is not defined the argument passed will not be a string (as these types specify), but rather an event */}
+    <Dropdown
+      className="tall wide"
+    >
+      <DropdownButton
+        buttonClass={DropdownMethodButton}
+      >
+        <Tooltip message={selectedMethod?.path || 'Select Method'} position="bottom" delay={500}>
+          {useLabel(selectedMethod?.path)}
+          <i className="fa fa-caret-down pad-left-sm" />
+        </Tooltip>
+      </DropdownButton>
       <DropdownItem onClick={handleChangeProtoFile}>
         <em>Click to change proto file</em>
       </DropdownItem>
@@ -49,22 +84,20 @@ export const GrpcMethodDropdown: FunctionComponent<Props> = ({
           <DropdownItem disabled>No methods found</DropdownItem>
         </>
       )}
-      {Object.keys(groupedByPkg).map(pkgName => (
-        <Fragment key={pkgName}>
+      {Object.entries(groupedByPkg).map(([name, pkg]) => (
+        <Fragment key={name}>
           <DropdownDivider>
-            {pkgName !== NO_PACKAGE_KEY && <NormalCase>pkg: {pkgName}</NormalCase>}
+            {name !== NO_PACKAGE_KEY && <NormalCase>pkg: {name}</NormalCase>}
           </DropdownDivider>
-          {groupedByPkg[pkgName].map(({ segments, type, fullPath }: GrpcMethodInfo) => (
+          {pkg.map(({ segments, type, fullPath }) => (
             <DropdownItem
               key={fullPath}
-              onClick={handleChange}
-              value={fullPath}
+              onClick={() => handleChange(fullPath)}
               disabled={disabled}
               selected={fullPath === selectedMethod?.path}
-              icon={<GrpcMethodTag methodType={type} />}
             >
               <Tooltip message={fullPath} position="right" delay={500}>
-                {getShortGrpcPath(segments, fullPath)}
+                <DropdownMethodButtonLabel><GrpcMethodTag methodType={type} /> {getShortGrpcPath(segments, fullPath)}</DropdownMethodButtonLabel>
               </Tooltip>
             </DropdownItem>
           ))}

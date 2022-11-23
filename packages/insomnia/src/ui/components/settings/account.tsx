@@ -7,7 +7,7 @@ import { Link } from '../base/link';
 import { PromptButton } from '../base/prompt-button';
 import { HelpTooltip } from '../help-tooltip';
 import { hideAllModals, showModal } from '../modals/index';
-import { LoginModalHandle } from '../modals/login-modal';
+import { LoginModal } from '../modals/login-modal';
 
 export const Account: FC = () => {
   const { disablePaidFeatureAds } = useSelector(selectSettings);
@@ -19,7 +19,7 @@ export const Account: FC = () => {
   const handleLogin = useCallback((event: React.SyntheticEvent<HTMLAnchorElement>) => {
     event.preventDefault();
     hideAllModals();
-    showModal(LoginModalHandle);
+    showModal(LoginModal);
   }, []);
 
   const handleSubmitPasswordChange = useCallback(async (event: React.SyntheticEvent<HTMLFormElement>) => {
@@ -50,18 +50,6 @@ export const Account: FC = () => {
     setError('');
     setFinishedResetting(true);
     setShowChangePassword(false);
-  }, []);
-
-  const emailCode = useCallback(async event => {
-    event.preventDefault();
-    try {
-      session.sendPasswordChangeCode();
-    } catch (err) {
-      setError(err.message);
-      return;
-    }
-    setCodeSent(true);
-    setError('');
   }, []);
 
   const openChangePasswordDialog = useCallback(() => {
@@ -138,7 +126,17 @@ export const Account: FC = () => {
               {codeSent ? 'A code was sent to your email' : 'Looking for a code?'}{' '}
               <Link
                 href="#"
-                onClick={emailCode}
+                onClick={async event => {
+                  event.preventDefault();
+                  try {
+                    session.sendPasswordChangeCode();
+                  } catch (err) {
+                    setError(err.message);
+                    return;
+                  }
+                  setCodeSent(true);
+                  setError('');
+                }}
               >
                 Email Me a Code
               </Link>

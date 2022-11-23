@@ -1,9 +1,10 @@
-import { buildQueryStringFromParams, joinUrlAndQueryString, smartEncodeUrl } from 'insomnia-url';
 import React, { FC, useState } from 'react';
 import { useAsync } from 'react-use';
 import styled from 'styled-components';
 
 import { Request } from '../../models/request';
+import { WebSocketRequest } from '../../models/websocket-request';
+import { buildQueryStringFromParams, joinUrlAndQueryString, smartEncodeUrl } from '../../utils/url/querystring';
 import { useNunjucks } from '../context/nunjucks/use-nunjucks';
 import { CopyButton as _CopyButton } from './base/copy-button';
 
@@ -27,7 +28,7 @@ const CopyButton = styled(_CopyButton)({
 });
 
 interface Props {
-  request: Request;
+  request: Request | WebSocketRequest;
 }
 
 const defaultPreview = '...';
@@ -43,6 +44,7 @@ export const RenderedQueryString: FC<Props> = ({ request }) => {
         url: request.url,
         parameters: enabledParameters,
       });
+
       if (!result) {
         return;
       }
